@@ -41,12 +41,10 @@ class Pipeline(object):
         hls = cv2.cvtColor(image, cv2.COLOR_RGB2HLS)
         s_ch = hls[:, :, 2]
         gray_gradient_x = self.abs_sobel_thresh(gray, thresh=(20, 100))
-        s_ch_gradient_x = self.abs_sobel_thresh(s_ch, thresh=(20, 100))
-        mag_and_dir_thresh = self.mag_and_dir_thresh(gray, mag_thresh=(30, 100),
-                                                     dir_thresh=(0.7, 1.3))
+        s_binary = np.zeros_like(s_ch)
+        s_binary[(s_ch >= 170) & (s_ch <= 255)] = 1
         combined = np.zeros_like(gray_gradient_x)
-        combined[(gray_gradient_x == 1) | (s_ch_gradient_x == 1) |
-                 (mag_and_dir_thresh == 1)] = 1
+        combined[(gray_gradient_x == 1) | (s_binary == 1)] = 1
 
         return combined
 
@@ -203,7 +201,7 @@ class Pipeline(object):
     def load_perspective_transform(self):
         # These are just constants taken from my IPython notebook
         src = np.float32([[262, 680], [550, 480], [730, 480], [1040, 680]])
-        dst = np.float32([[400, 680], [400, 400], [850, 400], [850, 680]])
+        dst = np.float32([[400, 680], [400, 150], [850, 150], [850, 680]])
 
         self.M = cv2.getPerspectiveTransform(src, dst)
         self.Minv = cv2.getPerspectiveTransform(dst, src)
