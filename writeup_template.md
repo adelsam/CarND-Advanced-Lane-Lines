@@ -97,6 +97,8 @@ To help process the video, I added sanity checking and averaging to my lane line
 
 We also expect the curvature of highway lane lines to be limited.  I approximated validating the curvature of the lane by checking the magnitude of the first coeffecient of the polynomial function, discarding any above a constant value.
 
+These checks are in the `sanity_check` function in `./source/pipeline.py`.
+
 In addition to this filtering, I also stored a queue of the last 5 reasonable fit lines, and just projected an average of these fit lines over frames that failed the sanity checks.  This provided reasonable results and the lane detection algorithm usually recovered quickly.
 
 ---
