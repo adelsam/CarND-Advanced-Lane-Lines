@@ -1,6 +1,7 @@
 import cv2
 import glob
 import pickle
+import collections
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
@@ -20,7 +21,7 @@ from moviepy.editor import VideoFileClip
 # 6. Project Lane lines/area back onto input frame
 # 7. Write stats out onto input frame
 # 8. Assemble frames into output video
-from source.line import Line, DebugInfo
+from source.line import DebugInfo
 
 
 class Pipeline(object):
@@ -30,8 +31,8 @@ class Pipeline(object):
         self.output_video = output_video
         self.load_camera_calibration()
         self.load_perspective_transform()
-        self.left_lane = Line('Left')
-        self.right_lane = Line('Right')
+        self.left_results = collections.deque(maxlen=5)
+        self.right_results = collections.deque(maxlen=5)
         self.detected = False
         self.debug = debug
         self.debug_info = None
@@ -129,17 +130,23 @@ class Pipeline(object):
         right_fit = np.polyfit(righty, rightx, 2)
         return left_fit, right_fit
 
+    def avg_left_result(self):
+        return np.average(self.left_results, axis=0)
+
+    def avg_right_result(self):
+        return np.average(self.right_results, axis=0)
+
     def margin_search(self, binary_warped):
         # Assume you now have a new warped binary image
         # from the next frame of video (also called "binary_warped")
         # It's now much easier to find line pixels!
-        left_fit = self.left_lane.fit
-        right_fit = self.right_lane.fit
+        left_fit = self.avg_left_result()
+        right_fit = self.avg_right_result()
 
         nonzero = binary_warped.nonzero()
         nonzeroy = np.array(nonzero[0])
         nonzerox = np.array(nonzero[1])
-        margin = 100
+        margin = 50
         left_lane_inds = (
         (nonzerox > (left_fit[0] * (nonzeroy ** 2) + left_fit[1] * nonzeroy + left_fit[2] - margin)) & (
         nonzerox < (left_fit[0] * (nonzeroy ** 2) + left_fit[1] * nonzeroy + left_fit[2] + margin)))
@@ -166,8 +173,8 @@ class Pipeline(object):
         y_eval = 719
         # Define conversions in x and y from pixels space to meters
         # Warped Image is 720px high and contains approx 5 dashed highway lines
-        # Lines are 3m separated by 10m, so 5*(3+10) = 65m
-        # Lane width is 500px in my warped image and should be around 3.7m
+        # Lane period at least 13.3m, I count at least 5.5 so 5.5*13 = 73m
+        # Lane width is 500px in my warped image and should be around 4.2m
         ym_per_pix = 73 / 720  # meters per pixel in y dimension
         xm_per_pix = 4.2 / 500  # meters per pixel in x dimension
 
@@ -201,19 +208,17 @@ class Pipeline(object):
         left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
         right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
 
-        left_curverad, right_curverad = self.calculate_radius(ploty, left_fitx, right_fitx)
-
         if self.sanity_check(left_fitx, right_fitx, left_fit, right_fit):
             #Store results
             self.detected = True
-            self.left_lane.fit = left_fit
-            self.right_lane.fit = right_fit
-        else:
-            left_fit = self.left_lane.fit
-            right_fit = self.right_lane.fit
-            left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
-            right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
-            left_curverad, right_curverad = self.calculate_radius(ploty, left_fitx, right_fitx)
+            self.left_results.append(left_fit)
+            self.right_results.append(right_fit)
+
+        left_fit = self.avg_left_result()
+        right_fit = self.avg_right_result()
+        left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
+        right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
+        left_curverad, right_curverad = self.calculate_radius(ploty, left_fitx, right_fitx)
 
         if self.debug and self.debug_info:
             self.generate_debug_image(binary_warped, left_fitx, right_fitx, ploty)
@@ -232,16 +237,6 @@ class Pipeline(object):
         color = (255, 255, 255)
         cv2.putText(car_perspective, 'Left Radius: {}m'.format(left_curverad), (10, 50), font, 1.5, color, 3)
         cv2.putText(car_perspective, 'Right Radius: {}m'.format(right_curverad), (10, 100), font, 1.5, color, 3)
-
-        # More testing
-        lane_width = right_fitx - left_fitx
-        avg_width = np.average(lane_width)
-        min_width = np.min(lane_width)
-        max_width = np.max(lane_width)
-        n_2_diff = left_fit[0] - right_fit[0]
-        cv2.putText(car_perspective, 'min width: {}px {}'.format(min_width, min_width/avg_width), (10, 150), font, 1.5, color, 3)
-        cv2.putText(car_perspective, 'max width: {}px {}'.format(max_width, max_width/avg_width), (10, 200), font, 1.5, color, 3)
-        cv2.putText(car_perspective, 'n^2 diff: {}'.format(n_2_diff), (10, 250), font, 1.5, color, 3)
 
         return car_perspective
 
@@ -357,5 +352,5 @@ class Pipeline(object):
 
 
 if __name__ == '__main__':
-    pipeline = Pipeline('../project_video.mp4', '../output_video.mp4', debug=True)
+    pipeline = Pipeline('../project_video.mp4', '../output_video.mp4')
     pipeline.process()
