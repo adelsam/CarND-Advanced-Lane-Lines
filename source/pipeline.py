@@ -32,6 +32,7 @@ class Pipeline(object):
         self.load_perspective_transform()
         self.left_lane = Line('Left')
         self.right_lane = Line('Right')
+        self.detected = False
         self.debug = debug
         self.debug_info = None
         self.debug_img = None
@@ -180,14 +181,18 @@ class Pipeline(object):
             2 * right_fit_cr[0])
         return left_curverad, right_curverad
 
-    def sanity_check(self, left_fitx, right_fitx):
+    def sanity_check(self, left_fitx, right_fitx, left_fit, right_fit):
         lane_width = right_fitx - left_fitx
         avg_width = np.average(lane_width)
-        return np.min(lane_width) >= .6 * avg_width and np.max(lane_width) <= 1.3 * avg_width
+
+        abs_n_2_diff = abs(left_fit[0] - right_fit[0])
+
+        return (np.min(lane_width) >= .6 * avg_width and np.max(lane_width) <= 1.3 * avg_width
+            and abs_n_2_diff < 0.0005)
 
 
     def find_lane_area(self, binary_warped, image, img_size):
-        if self.left_lane.detected and self.right_lane.detected:
+        if self.detected:
             left_fit, right_fit = self.margin_search(binary_warped)
         else:
             left_fit, right_fit = self.sliding_window_search(binary_warped)
@@ -198,11 +203,10 @@ class Pipeline(object):
 
         left_curverad, right_curverad = self.calculate_radius(ploty, left_fitx, right_fitx)
 
-        if self.sanity_check(left_fitx, right_fitx):
+        if self.sanity_check(left_fitx, right_fitx, left_fit, right_fit):
             #Store results
-            self.left_lane.detected = True
+            self.detected = True
             self.left_lane.fit = left_fit
-            self.right_lane.detected = True
             self.right_lane.fit = right_fit
         else:
             left_fit = self.left_lane.fit
@@ -234,11 +238,10 @@ class Pipeline(object):
         avg_width = np.average(lane_width)
         min_width = np.min(lane_width)
         max_width = np.max(lane_width)
+        n_2_diff = left_fit[0] - right_fit[0]
         cv2.putText(car_perspective, 'min width: {}px {}'.format(min_width, min_width/avg_width), (10, 150), font, 1.5, color, 3)
         cv2.putText(car_perspective, 'max width: {}px {}'.format(max_width, max_width/avg_width), (10, 200), font, 1.5, color, 3)
-        cv2.putText(car_perspective, 'left fit: {} {} {}'.format(left_fit[0], left_fit[1], left_fit[2]), (10, 250), font, 1.5, color, 3)
-        cv2.putText(car_perspective, 'right fit: {} {} {}'.format(right_fit[0], right_fit[1], right_fit[2]), (10, 300), font, 1.5, color, 3)
-
+        cv2.putText(car_perspective, 'n^2 diff: {}'.format(n_2_diff), (10, 250), font, 1.5, color, 3)
 
         return car_perspective
 

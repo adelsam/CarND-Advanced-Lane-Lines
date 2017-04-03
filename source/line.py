@@ -4,6 +4,8 @@ class Line(object):
         self.detected = False
         self.fit = None
 
+
+
 class DebugInfo(object):
     def __init__(self, nonzerox, nonzeroy, margin, left_lane_inds, right_lane_inds):
         self.nonzerox = nonzerox
