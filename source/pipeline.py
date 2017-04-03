@@ -20,18 +20,21 @@ from moviepy.editor import VideoFileClip
 # 6. Project Lane lines/area back onto input frame
 # 7. Write stats out onto input frame
 # 8. Assemble frames into output video
-from source.line import Line
+from source.line import Line, DebugInfo
 
 
 class Pipeline(object):
 
-    def __init__(self, input_video, output_video):
+    def __init__(self, input_video, output_video, debug=False):
         self.input_video = input_video
         self.output_video = output_video
         self.load_camera_calibration()
         self.load_perspective_transform()
         self.left_lane = Line('Left')
         self.right_lane = Line('Right')
+        self.debug = debug
+        self.debug_info = None
+        self.debug_img = None
 
     def sobel(self, image):
         '''
@@ -42,7 +45,7 @@ class Pipeline(object):
         s_ch = hls[:, :, 2]
         gray_gradient_x = self.abs_sobel_thresh(gray, thresh=(20, 100))
         s_binary = np.zeros_like(s_ch)
-        s_binary[(s_ch >= 170) & (s_ch <= 255)] = 1
+        s_binary[(s_ch >= 120) & (s_ch <= 255)] = 1
         combined = np.zeros_like(gray_gradient_x)
         combined[(gray_gradient_x == 1) | (s_binary == 1)] = 1
 
@@ -56,9 +59,14 @@ class Pipeline(object):
         out_img = np.dstack((binary_warped, binary_warped, binary_warped)) * 255
         # Find the peak of the left and right halves of the histogram
         # These will be the starting point for the left and right lines
+
+        # Edge Protection
+        # Exclude this number of pixes from left and right edge of frame
+        edge_protection = 100
+
         midpoint = np.int(histogram.shape[0] / 2)
-        leftx_base = np.argmax(histogram[:midpoint])
-        rightx_base = np.argmax(histogram[midpoint:]) + midpoint
+        leftx_base = np.argmax(histogram[edge_protection:midpoint])
+        rightx_base = np.argmax(histogram[midpoint:-edge_protection]) + midpoint
 
         # Choose the number of sliding windows
         nwindows = 9
@@ -146,7 +154,37 @@ class Pipeline(object):
         # Fit a second order polynomial to each
         left_fit = np.polyfit(lefty, leftx, 2)
         right_fit = np.polyfit(righty, rightx, 2)
+
+        if self.debug:
+            self.debug_info = DebugInfo(nonzerox, nonzeroy, margin, left_lane_inds, right_lane_inds)
+
         return left_fit, right_fit
+
+    def calculate_radius(self, ploty, left_fitx, right_fitx, height=720):
+        # Evaluate Curvature at bottom of frame?
+        y_eval = 719
+        # Define conversions in x and y from pixels space to meters
+        # Warped Image is 720px high and contains approx 5 dashed highway lines
+        # Lines are 3m separated by 10m, so 5*(3+10) = 65m
+        # Lane width is 500px in my warped image and should be around 3.7m
+        ym_per_pix = 73 / 720  # meters per pixel in y dimension
+        xm_per_pix = 4.2 / 500  # meters per pixel in x dimension
+
+        # Fit new polynomials to x,y in world space
+        left_fit_cr = np.polyfit(ploty * ym_per_pix, left_fitx * xm_per_pix, 2)
+        right_fit_cr = np.polyfit(ploty * ym_per_pix, right_fitx * xm_per_pix, 2)
+        # Calculate the new radii of curvature
+        left_curverad = ((1 + (2 * left_fit_cr[0] * y_eval * ym_per_pix + left_fit_cr[1]) ** 2) ** 1.5) / np.absolute(
+            2 * left_fit_cr[0])
+        right_curverad = ((1 + (2 * right_fit_cr[0] * y_eval * ym_per_pix + right_fit_cr[1]) ** 2) ** 1.5) / np.absolute(
+            2 * right_fit_cr[0])
+        return left_curverad, right_curverad
+
+    def sanity_check(self, left_fitx, right_fitx):
+        lane_width = right_fitx - left_fitx
+        avg_width = np.average(lane_width)
+        return np.min(lane_width) >= .6 * avg_width and np.max(lane_width) <= 1.3 * avg_width
+
 
     def find_lane_area(self, binary_warped, image, img_size):
         if self.left_lane.detected and self.right_lane.detected:
@@ -154,15 +192,27 @@ class Pipeline(object):
         else:
             left_fit, right_fit = self.sliding_window_search(binary_warped)
 
-        #Store results
-        self.left_lane.detected = True
-        self.left_lane.fit = left_fit
-        self.right_lane.detected = True
-        self.right_lane.fit = right_fit
-
         ploty = np.linspace(0, binary_warped.shape[0] - 1, binary_warped.shape[0])
         left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
         right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
+
+        left_curverad, right_curverad = self.calculate_radius(ploty, left_fitx, right_fitx)
+
+        if self.sanity_check(left_fitx, right_fitx):
+            #Store results
+            self.left_lane.detected = True
+            self.left_lane.fit = left_fit
+            self.right_lane.detected = True
+            self.right_lane.fit = right_fit
+        else:
+            left_fit = self.left_lane.fit
+            right_fit = self.right_lane.fit
+            left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
+            right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
+            left_curverad, right_curverad = self.calculate_radius(ploty, left_fitx, right_fitx)
+
+        if self.debug and self.debug_info:
+            self.generate_debug_image(binary_warped, left_fitx, right_fitx, ploty)
 
         proj = np.zeros_like(image).astype(np.uint8)
 
@@ -172,8 +222,25 @@ class Pipeline(object):
         points = np.vstack((left_points, np.flipud(right_points)))
         cv2.fillPoly(proj, [points], (0, 255, 0))
 
-        return cv2.warpPerspective(proj, self.Minv, img_size, flags=cv2.INTER_LINEAR)
+        car_perspective = cv2.warpPerspective(proj, self.Minv, img_size, flags=cv2.INTER_LINEAR)
+        # Add text and stuff
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        color = (255, 255, 255)
+        cv2.putText(car_perspective, 'Left Radius: {}m'.format(left_curverad), (10, 50), font, 1.5, color, 3)
+        cv2.putText(car_perspective, 'Right Radius: {}m'.format(right_curverad), (10, 100), font, 1.5, color, 3)
 
+        # More testing
+        lane_width = right_fitx - left_fitx
+        avg_width = np.average(lane_width)
+        min_width = np.min(lane_width)
+        max_width = np.max(lane_width)
+        cv2.putText(car_perspective, 'min width: {}px {}'.format(min_width, min_width/avg_width), (10, 150), font, 1.5, color, 3)
+        cv2.putText(car_perspective, 'max width: {}px {}'.format(max_width, max_width/avg_width), (10, 200), font, 1.5, color, 3)
+        cv2.putText(car_perspective, 'left fit: {} {} {}'.format(left_fit[0], left_fit[1], left_fit[2]), (10, 250), font, 1.5, color, 3)
+        cv2.putText(car_perspective, 'right fit: {} {} {}'.format(right_fit[0], right_fit[1], right_fit[2]), (10, 300), font, 1.5, color, 3)
+
+
+        return car_perspective
 
     def process_image(self, image):
         img_size = (image.shape[1], image.shape[0])
@@ -182,6 +249,26 @@ class Pipeline(object):
         binary_warped = cv2.warpPerspective(binary, self.M, img_size, flags=cv2.INTER_LINEAR)
         lane_area_overlay = self.find_lane_area(binary_warped, image, img_size)
         overlay = cv2.addWeighted(image, 1, lane_area_overlay, 0.3, 0)
+
+        if self.debug:
+            vis = np.zeros_like(image)
+
+            overlay_resized = cv2.resize(overlay, (853, 480))
+            sobel_small = cv2.resize(binary, (426, 240))
+            sobel_color = np.dstack((sobel_small, sobel_small, sobel_small)) * 255
+            warped_small = cv2.resize(binary_warped, (426, 240))
+            warped_color = np.dstack((warped_small, warped_small, warped_small)) * 255
+
+            # vis [h, w]
+            vis[240:, :853] = overlay_resized # bottom-left
+            vis[:240, :426] = sobel_color
+            vis[:240, 426:852] = warped_color
+
+            if self.debug_img is not None:
+                debug_small = cv2.resize(self.debug_img, (426, 240))
+                vis[:240, 852:1278] = debug_small
+
+            overlay = vis
 
         return overlay
 
@@ -198,10 +285,22 @@ class Pipeline(object):
             self.mtx = dist_pickle["mtx"]
             self.dist = dist_pickle["dist"]
 
-    def load_perspective_transform(self):
+    def load_perspective_transform(self, image_width=1280):
         # These are just constants taken from my IPython notebook
-        src = np.float32([[262, 680], [550, 480], [730, 480], [1040, 680]])
-        dst = np.float32([[400, 680], [400, 150], [850, 150], [850, 680]])
+        # a = bottom height
+        # b = bottom width (from center)
+        # c = top height
+        # d = top width (from center)
+        a = 680
+        b = 378
+        c = 480
+        d = 88
+        w = image_width / 2
+        q = 250 # top and bottom width (b, d) for transform
+        src = np.float32([[w - b, a], [w - d, c],
+                          [w + d, c], [w + b, a]])
+        dst = np.float32([[w - q, a], [w - q, c],
+                          [w + q, c], [w + q, a]])
 
         self.M = cv2.getPerspectiveTransform(src, dst)
         self.Minv = cv2.getPerspectiveTransform(dst, src)
@@ -218,30 +317,42 @@ class Pipeline(object):
         # Return the result
         return binary_output
 
-    def mag_and_dir_thresh(self, gray, mag_thresh, dir_thresh, sobel_kernel=3):
-        sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
-        sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
-        # 3) Calculate the magnitude
-        magnitude = np.sqrt(np.square(sobelx) + np.square(sobely))
-        # 4) Scale to 8-bit (0 - 255) and convert to type = np.uint8
-        scaled_sobel = np.uint8(255 * magnitude / np.max(magnitude))
-        # 5) Create a binary mask where mag thresholds are met
-        mag_output = np.zeros_like(scaled_sobel)
-        mag_output[(scaled_sobel >= mag_thresh[0]) & (scaled_sobel <= mag_thresh[1])] = 1
+    def generate_debug_image(self, binary_warped, left_fitx, right_fitx, ploty):
+        out_img = np.dstack((binary_warped, binary_warped, binary_warped)) * 255
+        window_img = np.zeros_like(out_img)
 
-        abs_sobelx = np.absolute(sobelx)
-        abs_sobely = np.absolute(sobely)
-        # 4) Use np.arctan2(abs_sobely, abs_sobelx) to calculate the direction of the gradient
-        grad_dir = np.arctan2(abs_sobely, abs_sobelx)
-        dir_output = np.zeros_like(grad_dir)
-        dir_output[(grad_dir >= dir_thresh[0]) & (grad_dir <= dir_thresh[1])] = 1
+        nonzerox = self.debug_info.nonzerox
+        nonzeroy = self.debug_info.nonzeroy
+        margin = self.debug_info.margin
+        left_lane_inds = self.debug_info.left_lane_inds
+        right_lane_inds = self.debug_info.right_lane_inds
 
-        mag_and_dir = np.zeros_like(scaled_sobel)
-        mag_and_dir[((mag_output == 1) & (dir_output == 1))]
-        # Return the result
-        return mag_and_dir
+        # Color in left and right line pixels
+        out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
+        out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
+
+        # Generate a polygon to illustrate the search window area
+        # And recast the x and y points into usable format for cv2.fillPoly()
+        left_line_window1 = np.array([np.transpose(np.vstack([left_fitx - margin, ploty]))])
+        left_line_window2 = np.array([np.flipud(np.transpose(np.vstack([left_fitx + margin, ploty])))])
+        left_line_pts = np.hstack((left_line_window1, left_line_window2))
+        right_line_window1 = np.array([np.transpose(np.vstack([right_fitx - margin, ploty]))])
+        right_line_window2 = np.array([np.flipud(np.transpose(np.vstack([right_fitx + margin, ploty])))])
+        right_line_pts = np.hstack((right_line_window1, right_line_window2))
+
+        # Draw the lane onto the warped blank image
+        cv2.fillPoly(window_img, np.int_([left_line_pts]), (0, 255, 0))
+        cv2.fillPoly(window_img, np.int_([right_line_pts]), (0, 255, 0))
+
+        result = cv2.addWeighted(out_img, 1, window_img, 0.3, 0)
+        left_points_plt = np.stack((left_fitx, ploty)).astype(np.int).T
+        right_points_plt = np.stack((right_fitx, ploty)).astype(np.int).T
+        cv2.polylines(result, [left_points_plt], False, (240, 240, 60), 2)
+        cv2.polylines(result, [right_points_plt], False, (240, 240, 60), 2)
+
+        self.debug_img = result
 
 
 if __name__ == '__main__':
-    pipeline = Pipeline('../project_video.mp4', '../output_video.mp4')
+    pipeline = Pipeline('../project_video.mp4', '../output_video.mp4', debug=True)
     pipeline.process()
