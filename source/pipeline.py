@@ -168,7 +168,7 @@ class Pipeline(object):
 
         return left_fit, right_fit
 
-    def calculate_radius(self, ploty, left_fitx, right_fitx, height=720):
+    def calculate_radius(self, ploty, left_fitx, right_fitx):
         # Evaluate Curvature at bottom of frame?
         y_eval = 719
         # Define conversions in x and y from pixels space to meters
@@ -187,6 +187,17 @@ class Pipeline(object):
         right_curverad = ((1 + (2 * right_fit_cr[0] * y_eval * ym_per_pix + right_fit_cr[1]) ** 2) ** 1.5) / np.absolute(
             2 * right_fit_cr[0])
         return left_curverad, right_curverad
+
+    def calculate_offset(self, left_fitx, right_fitx):
+        # Evaluate Curvature at hood edge
+        y_eval = 680
+        # Lane width is 500px in my warped image and should be around 4.2m
+        xm_per_pix = 4.2 / 500  # meters per pixel in x dimension
+
+        lane_center = right_fitx[y_eval] - left_fitx[y_eval]
+
+        #center should be at 1280/2 = 640
+        return (640 - lane_center) * xm_per_pix
 
     def sanity_check(self, left_fitx, right_fitx, left_fit, right_fit):
         lane_width = right_fitx - left_fitx
@@ -219,6 +230,7 @@ class Pipeline(object):
         left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
         right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
         left_curverad, right_curverad = self.calculate_radius(ploty, left_fitx, right_fitx)
+        offset = self.calculate_offset(left_fitx, right_fitx)
 
         if self.debug and self.debug_info:
             self.generate_debug_image(binary_warped, left_fitx, right_fitx, ploty)
@@ -235,8 +247,10 @@ class Pipeline(object):
         # Add text and stuff
         font = cv2.FONT_HERSHEY_SIMPLEX
         color = (255, 255, 255)
+
         cv2.putText(car_perspective, 'Left Radius: {}m'.format(left_curverad), (10, 50), font, 1.5, color, 3)
         cv2.putText(car_perspective, 'Right Radius: {}m'.format(right_curverad), (10, 100), font, 1.5, color, 3)
+        cv2.putText(car_perspective, 'Center Offset: {}m'.format(offset), (10, 150), font, 1.5, color, 3)
 
         return car_perspective
 
