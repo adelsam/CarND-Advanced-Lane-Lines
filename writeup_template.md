@@ -18,8 +18,7 @@ The goals / steps of this project are the following:
 
 [//]: # (Image References)
 
-[image1]: ./output_images/test_undist.png "Undistorted"
-[image2]: ./test_images/test1.jpg "Road Transformed"
+[image1]: ./output_images/test_undist.jpg "Undistorted"
 [image3]: ./output_images/sobel_dual "Sobel Example"
 [image4]: ./output_images/warped.png "Warp Example"
 [image5]: ./output_images/sliding_window.png "Sliding Window Search"
@@ -52,7 +51,6 @@ I stored the calibration information (`mtx`, `dist`) in a pickle file so that it
 ####1. Provide an example of a distortion-corrected image.
 My single-image pipeline starts in the 8th cell of the IPython notebook.  I built the workflow one step at a time, using the interactive notebook to validate results as I went.
 
-/**![alt text][image2]**/
 ####2. Describe how (and identify where in your code) you used color transforms, gradients or other methods to create a thresholded binary image.  Provide an example of a binary image result.
 Since this assignment is primarily a computer vision asignment, I calculated a variety of color transforms and thresholds to try and extract the lane line pixels from sample images.  These functions are in the 7th IPython cell (i.e. `dev abs_sobel_thresh`).  The `conf_sobel` function was used to combine a sobel threshold on the gray channel with a simple threshold on the s channel.  I used the np.dstack() technique to visualize the pixels returned by each of these filters prior to combining them into a single binary image (Cell 12: `sobel_combined`).
 
