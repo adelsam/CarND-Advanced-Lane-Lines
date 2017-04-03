@@ -172,11 +172,11 @@ class Pipeline(object):
         # Evaluate Curvature at bottom of frame?
         y_eval = 719
         # Define conversions in x and y from pixels space to meters
-        # Warped Image is 720px high and contains approx 5 dashed highway lines
-        # Lane period at least 13.3m, I count at least 5.5 so 5.5*13 = 73m
-        # Lane width is 500px in my warped image and should be around 4.2m
+        # Warped Image is 720px high and contains approx 5.5 dashed highway lines
+        # Lane period at least 13.3m, so 5.5*13.3 = 73m
+        # Lane width is 500px in my warped image and should be around 3.8m
         ym_per_pix = 73 / 720  # meters per pixel in y dimension
-        xm_per_pix = 4.2 / 500  # meters per pixel in x dimension
+        xm_per_pix = 3.8 / 500  # meters per pixel in x dimension
 
         # Fit new polynomials to x,y in world space
         left_fit_cr = np.polyfit(ploty * ym_per_pix, left_fitx * xm_per_pix, 2)
@@ -192,7 +192,7 @@ class Pipeline(object):
         # Evaluate Curvature at hood edge
         y_eval = 680
         # Lane width is 500px in my warped image and should be around 4.2m
-        xm_per_pix = 4.2 / 500  # meters per pixel in x dimension
+        xm_per_pix = 3.8 / 500  # meters per pixel in x dimension
 
         lane_center = right_fitx[y_eval] - left_fitx[y_eval]
 
