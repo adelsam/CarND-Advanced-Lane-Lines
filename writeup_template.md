@@ -92,7 +92,7 @@ Here's a [link to my video result](./output_video.mp4)
 
 To process the video, I copied most of the code described above into a file `./source/pipeline.py` and completed the asignment in an IDE.
 
-#### 1. Sanity Checks
+#### 2. Sanity Checks
 To help process the video, I added sanity checking and averaging to my lane line calculation.  Since the warped image is a top down view, we expect the lane lines to be parallel.  I verified that the distance between the two lane lines was within a small percentage of the average based on the calculated lines and discarded any calculated best fit lines that failed that test.
 
 We also expect the curvature of highway lane lines to be limited.  I approximated validating the curvature of the lane by checking the magnitude of the first coeffecient of the polynomial function, discarding any above a constant value.
