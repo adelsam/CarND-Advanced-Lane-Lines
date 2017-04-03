@@ -19,8 +19,8 @@ The goals / steps of this project are the following:
 [//]: # (Image References)
 
 [image1]: ./output_images/test_undist.jpg "Undistorted"
-[image2]: ./output_images/undist_road.jpg "Undistorted"
-[image3]: ./output_images/sobel_dual "Sobel Example"
+[image2]: ./output_images/undist_road.png "Undistorted"
+[image3]: ./output_images/sobel_dual.png "Sobel Example"
 [image4]: ./output_images/warped.png "Warp Example"
 [image5]: ./output_images/sliding_window.png "Sliding Window Search"
 [image6]: ./output_images/warped_area.png "Output"
